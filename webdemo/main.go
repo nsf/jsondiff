@@ -19,7 +19,7 @@ func main() {
 			PrintTypes: true,
 		}
 		diff, text := jsondiff.Compare([]byte(a), []byte(b), &opts)
-		jq("#resultDiff").SetText(diff.String())
+		jq("#resultDiff").SetVal(diff.String())
 		jq("#resultText").SetHtml(text)
 	})
 	jq("#buttonSwap").On(jquery.CLICK, func(e jquery.Event) {
