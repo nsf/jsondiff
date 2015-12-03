@@ -198,6 +198,18 @@ func (ctx *context) printMismatch(a, b interface{}) {
 }
 
 func (ctx *context) printDiff(a, b interface{}) {
+	if a == nil || b == nil {
+		if a == nil && b == nil {
+			ctx.tag(&ctx.opts.Normal)
+			ctx.writeValueAndType(a)
+			ctx.result(FullMatch)
+		} else {
+			ctx.printMismatch(a, b)
+			ctx.result(NoMatch)
+		}
+		return
+	}
+
 	ka := reflect.TypeOf(a).Kind()
 	kb := reflect.TypeOf(b).Kind()
 	if ka != kb {

@@ -16,6 +16,9 @@ var cases = []struct {
 	{`{"a": 5}`, `{"a": 5, "b": 6}`, NoMatch},
 	{`{"a": 5, "b": 6}`, `{"a": 5}`, SupersetMatch},
 	{`{"a": 5, "b": 6}`, `{"b": 6}`, SupersetMatch},
+	{`{"a": null}`, `{"a": 1}`, NoMatch},
+	{`{"a": null}`, `{"a": null}`, FullMatch},
+	{`{"a": "null"}`, `{"a": null}`, NoMatch},
 }
 
 func TestCompare(t *testing.T) {
