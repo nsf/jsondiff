@@ -101,8 +101,12 @@ func (ctx *context) writeValue(v interface{}, full bool) {
 		ctx.buf.WriteString(strconv.Quote(vv))
 	case []interface{}:
 		if full {
-			ctx.level++
-			ctx.newline("[")
+			if len(vv) == 0 {
+				ctx.buf.WriteString("[")
+			} else {
+				ctx.level++
+				ctx.newline("[")
+			}
 			for i, v := range vv {
 				ctx.writeValue(v, true)
 				if i != len(vv)-1 {
@@ -118,8 +122,12 @@ func (ctx *context) writeValue(v interface{}, full bool) {
 		}
 	case map[string]interface{}:
 		if full {
-			ctx.level++
-			ctx.newline("{")
+			if len(vv) == 0 {
+				ctx.buf.WriteString("{")
+			} else {
+				ctx.level++
+				ctx.newline("{")
+			}
 			i := 0
 			for k, v := range vv {
 				ctx.key(k)
@@ -138,6 +146,15 @@ func (ctx *context) writeValue(v interface{}, full bool) {
 		}
 	default:
 		ctx.buf.WriteString("null")
+	}
+
+	ctx.writeTypeMaybe(v)
+}
+
+func (ctx *context) writeTypeMaybe(v interface{}) {
+	if ctx.opts.PrintTypes {
+		ctx.buf.WriteString(" ")
+		ctx.writeType(v)
 	}
 }
 
@@ -158,18 +175,10 @@ func (ctx *context) writeType(v interface{}) {
 	}
 }
 
-func (ctx *context) writeValueAndType(v interface{}) {
-	ctx.writeValue(v, false)
-	if ctx.opts.PrintTypes {
-		ctx.buf.WriteString(" ")
-		ctx.writeType(v)
-	}
-}
-
 func (ctx *context) writeMismatch(a, b interface{}) {
-	ctx.writeValueAndType(a)
+	ctx.writeValue(a, false)
 	ctx.buf.WriteString(" => ")
-	ctx.writeValueAndType(b)
+	ctx.writeValue(b, false)
 }
 
 func (ctx *context) tag(tag *Tag) {
@@ -201,7 +210,7 @@ func (ctx *context) printDiff(a, b interface{}) {
 	if a == nil || b == nil {
 		if a == nil && b == nil {
 			ctx.tag(&ctx.opts.Normal)
-			ctx.writeValueAndType(a)
+			ctx.writeValue(a, false)
 			ctx.result(FullMatch)
 		} else {
 			ctx.printMismatch(a, b)
@@ -237,7 +246,6 @@ func (ctx *context) printDiff(a, b interface{}) {
 			return
 		}
 	case reflect.Slice:
-		ctx.level++
 		sa, sb := a.([]interface{}), b.([]interface{})
 		salen, sblen := len(sa), len(sb)
 		max := salen
@@ -245,7 +253,12 @@ func (ctx *context) printDiff(a, b interface{}) {
 			max = sblen
 		}
 		ctx.tag(&ctx.opts.Normal)
-		ctx.newline("[")
+		if max == 0 {
+			ctx.buf.WriteString("[")
+		} else {
+			ctx.level++
+			ctx.newline("[")
+		}
 		for i := 0; i < max; i++ {
 			if i < salen && i < sblen {
 				ctx.printDiff(sa[i], sb[i])
@@ -267,9 +280,9 @@ func (ctx *context) printDiff(a, b interface{}) {
 			}
 		}
 		ctx.buf.WriteString("]")
+		ctx.writeTypeMaybe(a)
 		return
 	case reflect.Map:
-		ctx.level++
 		ma, mb := a.(map[string]interface{}), b.(map[string]interface{})
 		keysMap := make(map[string]bool)
 		for k := range ma {
@@ -284,7 +297,12 @@ func (ctx *context) printDiff(a, b interface{}) {
 		}
 		sort.Strings(keys)
 		ctx.tag(&ctx.opts.Normal)
-		ctx.newline("{")
+		if len(keys) == 0 {
+			ctx.buf.WriteString("{")
+		} else {
+			ctx.level++
+			ctx.newline("{")
+		}
 		for i, k := range keys {
 			va, aok := ma[k]
 			vb, bok := mb[k]
@@ -311,10 +329,11 @@ func (ctx *context) printDiff(a, b interface{}) {
 			}
 		}
 		ctx.buf.WriteString("}")
+		ctx.writeTypeMaybe(a)
 		return
 	}
 	ctx.tag(&ctx.opts.Normal)
-	ctx.writeValueAndType(a)
+	ctx.writeValue(a, true)
 	ctx.result(FullMatch)
 }
 

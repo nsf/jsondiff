@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Basic Bootstrap Template</title>
+    <title>JsonDiff Demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css" integrity="sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r" crossorigin="anonymous">
@@ -13,17 +13,27 @@
             <h1>JsonDiff Demo</h1>
             <p class="lead">Try it in the browser thanks to GopherJS!</p>
         </div>
-        <p><div class="row">
-            <div class="col-md-6"><textarea style="font-family:monospace;" class="form-control" rows="10" id="jsonLeft">{"format":"example","content":[{"align":"center","depth":0,"list":false,"content":[{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"FFFFFF","fontFamily":"Arial"},"content":"And please, feel free to send us your feedback and comments to "},{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"4DC3FF","fontFamily":"Arial"},"content":"hello world"},{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"FFFFFF","fontFamily":"Arial"},"content":", or just by clicking on the "},{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"4DC3FF","fontFamily":"Arial"},"content":"feedback"}],"ordered":false}],"version":3}</textarea></div>
-            <div class="col-md-6"><textarea style="font-family:monospace;" class="form-control" rows="10" id="jsonRight">{"format":"example","version":3.1,"content":[{"list":false,"depth":0,"ordered":false,"content":[{"content":"And please, feel free to send us your feedback and comments to ","style":{"size":20,"color":"FFFFFF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":"foo","style":{"size":20,"color":"4DC2FF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":", or just by clicking on the ","style":{"size":20,"color":"FFFFFF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":"feedback","style":{"size":20,"color":"4DC2FF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":" button up above.","style":{"size":20,"color":"FFFFFF","name":"Arial","bold":2,"italic":2,"underline":2}}],"align":"center"}]}</textarea></div>
-        </div></p>
+        <div class="row">
+            <div class="col-md-6">
+                <textarea style="font-family:monospace;" class="form-control" rows="10" id="jsonLeft">{"format":"example","content":[{"align":"center","depth":0,"list":false,"content":[{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"FFFFFF","fontFamily":"Arial"},"content":"And please, feel free to send us your feedback and comments to "},{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"4DC3FF","fontFamily":"Arial"},"content":"hello world"},{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"FFFFFF","fontFamily":"Arial"},"content":", or just by clicking on the "},{"style":{"underline":1,"bold":2,"size":20,"italic":2,"color":"4DC3FF","fontFamily":"Arial"},"content":"feedback"}],"ordered":false}],"version":3}</textarea>
+            </div>
+            <div class="col-md-6">
+                <textarea style="font-family:monospace;" class="form-control" rows="10" id="jsonRight">{"format":"example","version":3.1,"content":[{"list":false,"depth":0,"ordered":false,"content":[{"content":"And please, feel free to send us your feedback and comments to ","style":{"size":20,"color":"FFFFFF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":"foo","style":{"size":20,"color":"4DC2FF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":", or just by clicking on the ","style":{"size":20,"color":"FFFFFF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":"feedback","style":{"size":20,"color":"4DC2FF","name":"Arial","bold":2,"italic":2,"underline":2}},{"content":" button up above.","style":{"size":20,"color":"FFFFFF","name":"Arial","bold":2,"italic":2,"underline":2}}],"align":"center"}]}</textarea>
+            </div>
+        </div>
         <p>
-            <button type="button" class="btn btn-default" id="buttonCompare">Compare</button>
-            <button type="button" class="btn btn-default" id="buttonSwap">Swap</button>
-            <button type="button" class="btn btn-default" id="buttonClear">Clear</button>
+            <div class="form-inline">
+                <button type="button" class="btn btn-default" id="buttonCompare">Compare</button>
+                <button type="button" class="btn btn-default" id="buttonSwap">Swap</button>
+                <button type="button" class="btn btn-default" id="buttonClear">Clear</button>
+                &nbsp;
+                <label class="checkbox-inline">
+                    <input type="checkbox" id="checkType"> Append type
+                </label>
+            </div>
         </p>
         <p>
-            <input class="form-control" type="text" id="resultDiff" readonly />
+            <input class="form-control" type="text" id="resultDiff" readonly>
             <pre id="resultText"></pre>
         </p>
     </div>
