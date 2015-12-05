@@ -52,13 +52,24 @@ type Options struct {
 	PrintTypes bool
 }
 
+// Provides a set of options that are well suited for console output. Options
+// use ANSI foreground color escape sequences to highlight changes.
 func DefaultConsoleOptions() Options {
 	return Options{
-		Normal:  Tag{},
 		Added:   Tag{Begin: "\033[0;32m", End: "\033[0m"},
 		Removed: Tag{Begin: "\033[0;31m", End: "\033[0m"},
 		Changed: Tag{Begin: "\033[0;33m", End: "\033[0m"},
-		Prefix:  "",
+		Indent:  "    ",
+	}
+}
+
+// Provides a set of options that are well suited for HTML output. Works best
+// inside <pre> tag.
+func DefaultHTMLOptions() Options {
+	return Options{
+		Added:   Tag{Begin: `<span style="background-color: #8bff7f">`, End: `</span>`},
+		Removed: Tag{Begin: `<span style="background-color: #fd7f7f">`, End: `</span>`},
+		Changed: Tag{Begin: `<span style="background-color: #fcff7f">`, End: `</span>`},
 		Indent:  "    ",
 	}
 }
@@ -337,6 +348,31 @@ func (ctx *context) printDiff(a, b interface{}) {
 	ctx.result(FullMatch)
 }
 
+// Compares two JSON documents using given options. Returns difference type and
+// a string describing differences.
+//
+// FullMatch means provided arguments are deeply equal.
+//
+// SupersetMatch means first argument is a superset of a second argument. In
+// this context being a superset means that for each object or array in the
+// hierarchy which don't match exactly, it must be a superset of another one.
+// For example:
+//
+//     {"a": 123, "b": 456, "c": [7, 8, 9]}
+//
+// Is a superset of:
+//
+//     {"a": 123, "c": [7, 8]}
+//
+// NoMatch means there is no match.
+//
+// The rest of the difference types mean that one of or both JSON documents are
+// invalid JSON.
+//
+// Returned string uses a format similar to pretty printed JSON to show the
+// human-readable difference between provided JSON documents. It is important
+// to understand that returned format is not a valid JSON and is not meant
+// to be machine readable.
 func Compare(a, b []byte, opts *Options) (Difference, string) {
 	var av, bv interface{}
 	errA := json.Unmarshal(a, &av)
