@@ -22,6 +22,8 @@ Is a superset of (or second item is a subset of a first one):
 {"a": 1, "c": 3}
 ```
 
-You can try it out live here (thanks to [gopherjs](https://github.com/gopherjs/gopherjs)): http://nosmileface.ru/jsondiff
+Library API documentation can be found on godoc.org: https://godoc.org/github.com/nsf/jsondiff
+
+You can try **LIVE** version here (thanks to [gopherjs](https://github.com/gopherjs/gopherjs)): http://nosmileface.ru/jsondiff
 
 The library is inspired by http://tlrobinson.net/projects/javascript-fun/jsondiff/
