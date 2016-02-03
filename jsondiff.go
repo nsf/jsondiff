@@ -106,8 +106,8 @@ func (ctx *context) writeValue(v interface{}, full bool) {
 	switch vv := v.(type) {
 	case bool:
 		ctx.buf.WriteString(strconv.FormatBool(vv))
-	case float64:
-		ctx.buf.WriteString(strconv.FormatFloat(vv, 'g', -1, 64))
+	case json.Number:
+		ctx.buf.WriteString(string(vv))
 	case string:
 		ctx.buf.WriteString(strconv.Quote(vv))
 	case []interface{}:
@@ -173,7 +173,7 @@ func (ctx *context) writeType(v interface{}) {
 	switch v.(type) {
 	case bool:
 		ctx.buf.WriteString("(boolean)")
-	case float64:
+	case json.Number:
 		ctx.buf.WriteString("(number)")
 	case string:
 		ctx.buf.WriteString("(string)")
@@ -244,17 +244,22 @@ func (ctx *context) printDiff(a, b interface{}) {
 			ctx.result(NoMatch)
 			return
 		}
-	case reflect.Float64:
-		if a.(float64) != b.(float64) {
-			ctx.printMismatch(a, b)
-			ctx.result(NoMatch)
-			return
-		}
 	case reflect.String:
-		if a.(string) != b.(string) {
-			ctx.printMismatch(a, b)
-			ctx.result(NoMatch)
-			return
+		switch aa := a.(type) {
+		case json.Number:
+			bb, ok := b.(json.Number)
+			if !ok || aa != bb {
+				ctx.printMismatch(a, b)
+				ctx.result(NoMatch)
+				return
+			}
+		case string:
+			bb, ok := b.(string)
+			if !ok || aa != bb {
+				ctx.printMismatch(a, b)
+				ctx.result(NoMatch)
+				return
+			}
 		}
 	case reflect.Slice:
 		sa, sb := a.([]interface{}), b.([]interface{})
@@ -375,8 +380,12 @@ func (ctx *context) printDiff(a, b interface{}) {
 // to be machine readable.
 func Compare(a, b []byte, opts *Options) (Difference, string) {
 	var av, bv interface{}
-	errA := json.Unmarshal(a, &av)
-	errB := json.Unmarshal(b, &bv)
+	da := json.NewDecoder(bytes.NewReader(a))
+	da.UseNumber()
+	db := json.NewDecoder(bytes.NewReader(b))
+	db.UseNumber()
+	errA := da.Decode(&av)
+	errB := db.Decode(&bv)
 	if errA != nil && errB != nil {
 		return BothArgsAreInvalidJson, "both arguments are invalid json"
 	}

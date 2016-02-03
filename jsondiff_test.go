@@ -19,6 +19,10 @@ var cases = []struct {
 	{`{"a": null}`, `{"a": 1}`, NoMatch},
 	{`{"a": null}`, `{"a": null}`, FullMatch},
 	{`{"a": "null"}`, `{"a": null}`, NoMatch},
+	{`{"a": 3.1415}`, `{"a": 3.14156}`, NoMatch},
+	{`{"a": 3.1415}`, `{"a": 3.1415}`, FullMatch},
+	{`{"a": 4213123123}`, `{"a": "4213123123"}`, NoMatch},
+	{`{"a": 4213123123}`, `{"a": 4213123123}`, FullMatch},
 }
 
 func TestCompare(t *testing.T) {
