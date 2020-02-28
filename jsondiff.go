@@ -50,16 +50,26 @@ type Options struct {
 	Prefix     string
 	Indent     string
 	PrintTypes bool
+	SortKeys   SortMethod
 }
+
+type SortMethod int
+
+const (
+	Ascending SortMethod = iota
+	Descending
+	None
+)
 
 // Provides a set of options that are well suited for console output. Options
 // use ANSI foreground color escape sequences to highlight changes.
 func DefaultConsoleOptions() Options {
 	return Options{
-		Added:   Tag{Begin: "\033[0;32m", End: "\033[0m"},
-		Removed: Tag{Begin: "\033[0;31m", End: "\033[0m"},
-		Changed: Tag{Begin: "\033[0;33m", End: "\033[0m"},
-		Indent:  "    ",
+		Added:    Tag{Begin: "\033[0;32m", End: "\033[0m"},
+		Removed:  Tag{Begin: "\033[0;31m", End: "\033[0m"},
+		Changed:  Tag{Begin: "\033[0;33m", End: "\033[0m"},
+		Indent:   "    ",
+		SortKeys: Ascending,
 	}
 }
 
@@ -67,10 +77,11 @@ func DefaultConsoleOptions() Options {
 // inside <pre> tag.
 func DefaultHTMLOptions() Options {
 	return Options{
-		Added:   Tag{Begin: `<span style="background-color: #8bff7f">`, End: `</span>`},
-		Removed: Tag{Begin: `<span style="background-color: #fd7f7f">`, End: `</span>`},
-		Changed: Tag{Begin: `<span style="background-color: #fcff7f">`, End: `</span>`},
-		Indent:  "    ",
+		Added:    Tag{Begin: `<span style="background-color: #8bff7f">`, End: `</span>`},
+		Removed:  Tag{Begin: `<span style="background-color: #fd7f7f">`, End: `</span>`},
+		Changed:  Tag{Begin: `<span style="background-color: #fcff7f">`, End: `</span>`},
+		Indent:   "    ",
+		SortKeys: Ascending,
 	}
 }
 
@@ -311,7 +322,13 @@ func (ctx *context) printDiff(a, b interface{}) {
 		for k := range keysMap {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		switch ctx.opts.SortKeys {
+		case Ascending:
+			sort.Strings(keys)
+		case Descending:
+			sort.Sort(sort.Reverse(sort.StringSlice(keys)))
+		case None:
+		}
 		ctx.tag(&ctx.opts.Normal)
 		if len(keys) == 0 {
 			ctx.buf.WriteString("{")
