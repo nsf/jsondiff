@@ -43,23 +43,36 @@ type Tag struct {
 }
 
 type Options struct {
-	Normal     Tag
-	Added      Tag
-	Removed    Tag
-	Changed    Tag
-	Prefix     string
-	Indent     string
-	PrintTypes bool
+	Normal           Tag
+	Added            Tag
+	Removed          Tag
+	Changed          Tag
+	Prefix           string
+	Indent           string
+	PrintTypes       bool
+	ChangedSeparator string
+}
+
+// Provides a set of options in JSON format that are fully parseable.
+func DefaultJSONOptions() Options {
+	return Options{
+		Added:            Tag{Begin: "\"prop-added\":{", End: "}"},
+		Removed:          Tag{Begin: "\"prop-removed\":{", End: "}"},
+		Changed:          Tag{Begin: "{\"changed\":[", End: "]}"},
+		ChangedSeparator: ", ",
+		Indent:           "    ",
+	}
 }
 
 // Provides a set of options that are well suited for console output. Options
 // use ANSI foreground color escape sequences to highlight changes.
 func DefaultConsoleOptions() Options {
 	return Options{
-		Added:   Tag{Begin: "\033[0;32m", End: "\033[0m"},
-		Removed: Tag{Begin: "\033[0;31m", End: "\033[0m"},
-		Changed: Tag{Begin: "\033[0;33m", End: "\033[0m"},
-		Indent:  "    ",
+		Added:            Tag{Begin: "\033[0;32m", End: "\033[0m"},
+		Removed:          Tag{Begin: "\033[0;31m", End: "\033[0m"},
+		Changed:          Tag{Begin: "\033[0;33m", End: "\033[0m"},
+		ChangedSeparator: " => ",
+		Indent:           "    ",
 	}
 }
 
@@ -67,10 +80,11 @@ func DefaultConsoleOptions() Options {
 // inside <pre> tag.
 func DefaultHTMLOptions() Options {
 	return Options{
-		Added:   Tag{Begin: `<span style="background-color: #8bff7f">`, End: `</span>`},
-		Removed: Tag{Begin: `<span style="background-color: #fd7f7f">`, End: `</span>`},
-		Changed: Tag{Begin: `<span style="background-color: #fcff7f">`, End: `</span>`},
-		Indent:  "    ",
+		Added:            Tag{Begin: `<span style="background-color: #8bff7f">`, End: `</span>`},
+		Removed:          Tag{Begin: `<span style="background-color: #fd7f7f">`, End: `</span>`},
+		Changed:          Tag{Begin: `<span style="background-color: #fcff7f">`, End: `</span>`},
+		ChangedSeparator: " => ",
+		Indent:           "    ",
 	}
 }
 
@@ -188,7 +202,7 @@ func (ctx *context) writeType(v interface{}) {
 
 func (ctx *context) writeMismatch(a, b interface{}) {
 	ctx.writeValue(a, false)
-	ctx.buf.WriteString(" => ")
+	ctx.buf.WriteString(ctx.opts.ChangedSeparator)
 	ctx.writeValue(b, false)
 }
 
