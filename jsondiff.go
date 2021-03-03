@@ -51,6 +51,9 @@ type Options struct {
 	Indent           string
 	PrintTypes       bool
 	ChangedSeparator string
+	// When provided, this function will be used to compare two numbers. By default numbers are compared using their
+	// literal representation byte by byte.
+	CompareNumbers func(a, b json.Number) bool
 }
 
 // Provides a set of options in JSON format that are fully parseable.
@@ -94,6 +97,14 @@ type context struct {
 	level   int
 	lastTag *Tag
 	diff    Difference
+}
+
+func (ctx *context) compareNumbers(a, b json.Number) bool {
+	if ctx.opts.CompareNumbers != nil {
+		return ctx.opts.CompareNumbers(a, b)
+	} else {
+		return a == b
+	}
 }
 
 func (ctx *context) newline(s string) {
@@ -262,7 +273,7 @@ func (ctx *context) printDiff(a, b interface{}) {
 		switch aa := a.(type) {
 		case json.Number:
 			bb, ok := b.(json.Number)
-			if !ok || aa != bb {
+			if !ok || !ctx.compareNumbers(aa, bb) {
 				ctx.printMismatch(a, b)
 				ctx.result(NoMatch)
 				return
