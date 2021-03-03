@@ -3,6 +3,7 @@ package jsondiff
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -51,6 +52,11 @@ type Options struct {
 	Indent           string
 	PrintTypes       bool
 	ChangedSeparator string
+	// UseFloats determines whether to compare numbers as 64 bit floats using an epsilon value. If
+	// true, then the comparison will parse all numbers as Float64 values and ignore "insignificant"
+	// differences between them. If false, then numbers will be compared by their exact string
+	// representation.
+	UseFloats bool
 }
 
 // Provides a set of options in JSON format that are fully parseable.
@@ -231,6 +237,21 @@ func (ctx *context) printMismatch(a, b interface{}) {
 	ctx.writeMismatch(a, b)
 }
 
+// epsilon is used when comparing floating point numbers. This is the same value as FLT_EPSILON
+// from C, also known as the "machine epsilon".
+var epsilon = math.Nextafter(1.0, 2.0) - 1.0
+
+func (ctx *context) compareFloats(a, b float64) bool {
+	// Scale the epsilon based on the relative size of the numbers being compared.
+	// For numbers greater than 2.0, EPSILON will be smaller than the difference between two
+	// adjacent floats, so it needs to be scaled up. For numbers smaller than 1.0, EPSILON could
+	// easily be larger than the numbers we're comparing and thus needs scaled down. This method
+	// could still break down for numbers that are very near 0, but it's the best we can do
+	// without knowing the relative scale of such numbers ahead of time.
+	var scaledEpsilon = epsilon * math.Max(math.Abs(a), math.Abs(b))
+	return math.Abs(a-b) < scaledEpsilon
+}
+
 func (ctx *context) printDiff(a, b interface{}) {
 	if a == nil || b == nil {
 		if a == nil && b == nil {
@@ -274,6 +295,13 @@ func (ctx *context) printDiff(a, b interface{}) {
 				ctx.result(NoMatch)
 				return
 			}
+		}
+	case reflect.Float64:
+		bb, ok := b.(float64)
+		if !ok || !ctx.compareFloats(a.(float64), bb) {
+			ctx.printMismatch(a, b)
+			ctx.result(NoMatch)
+			return
 		}
 	case reflect.Slice:
 		sa, sb := a.([]interface{}), b.([]interface{})
@@ -395,9 +423,11 @@ func (ctx *context) printDiff(a, b interface{}) {
 func Compare(a, b []byte, opts *Options) (Difference, string) {
 	var av, bv interface{}
 	da := json.NewDecoder(bytes.NewReader(a))
-	da.UseNumber()
 	db := json.NewDecoder(bytes.NewReader(b))
-	db.UseNumber()
+	if !opts.UseFloats {
+		da.UseNumber()
+		db.UseNumber()
+	}
 	errA := da.Decode(&av)
 	errB := db.Decode(&bv)
 	if errA != nil && errB != nil {
