@@ -53,8 +53,9 @@ type Options struct {
 	ChangedSeparator string
 	// When provided, this function will be used to compare two numbers. By default numbers are compared using their
 	// literal representation byte by byte.
-	CompareNumbers   func(a, b json.Number) bool
-	DontPrintMatches bool
+	CompareNumbers func(a, b json.Number) bool
+	// When true, only differences will be printed. By default, it will print the full json.
+	SkipMatches bool
 }
 
 // Provides a set of options in JSON format that are fully parseable.
@@ -248,7 +249,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 
 	if a == nil || b == nil {
 		if a == nil && b == nil {
-			if !ctx.opts.DontPrintMatches {
+			if !ctx.opts.SkipMatches {
 				beforePrint()
 				ctx.tag(&ctx.opts.Normal)
 				ctx.writeValue(a, false)
@@ -330,14 +331,14 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 			}
 		}
 
-		if !ctx.opts.DontPrintMatches {
+		if !ctx.opts.SkipMatches {
 			writeHeader()
 		}
 
 		for i := 0; i < max; i++ {
 			hadChanges := false
 			if i < salen && i < sblen {
-				hadChanges = ctx.printDiff(sa[i], sb[i], func(){
+				hadChanges = ctx.printDiff(sa[i], sb[i], func() {
 					writeHeader()
 				})
 			} else if i < salen {
@@ -356,7 +357,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 				ctx.level--
 			}
 
-			if hadChanges || !ctx.opts.DontPrintMatches {
+			if hadChanges || !ctx.opts.SkipMatches {
 				ctx.tag(&ctx.opts.Normal)
 				if i != max-1 {
 					ctx.newline(",")
@@ -370,7 +371,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 			}
 		}
 
-		if gotDifference || !ctx.opts.DontPrintMatches {
+		if gotDifference || !ctx.opts.SkipMatches {
 			ctx.buf.WriteString("]")
 			ctx.writeTypeMaybe(a)
 		}
@@ -415,7 +416,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 			}
 		}
 
-		if !ctx.opts.DontPrintMatches {
+		if !ctx.opts.SkipMatches {
 			writeHeader()
 		}
 
@@ -448,7 +449,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 				ctx.level--
 			}
 
-			if hadChanges || !ctx.opts.DontPrintMatches {
+			if hadChanges || !ctx.opts.SkipMatches {
 				ctx.tag(&ctx.opts.Normal)
 				if i != len(keys)-1 {
 					ctx.newline(",")
@@ -462,7 +463,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 			}
 		}
 
-		if gotDifference || !ctx.opts.DontPrintMatches {
+		if gotDifference || !ctx.opts.SkipMatches {
 			ctx.buf.WriteString("}")
 			ctx.writeTypeMaybe(a)
 		}
@@ -470,7 +471,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 		return gotDifference
 	}
 
-	if !ctx.opts.DontPrintMatches {
+	if !ctx.opts.SkipMatches {
 		beforePrint()
 		ctx.tag(&ctx.opts.Normal)
 		ctx.writeValue(a, true)
@@ -524,7 +525,7 @@ func Compare(a, b []byte, opts *Options) (Difference, string) {
 	}
 
 	ctx := context{opts: opts}
-	ctx.printDiff(av, bv, func(){})
+	ctx.printDiff(av, bv, func() {})
 	if ctx.lastTag != nil {
 		ctx.buf.WriteString(ctx.lastTag.End)
 	}
