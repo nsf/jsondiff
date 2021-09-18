@@ -43,17 +43,22 @@ type Tag struct {
 }
 
 type Options struct {
-	Normal           Tag
-	Added            Tag
-	Removed          Tag
-	Changed          Tag
-	Prefix           string
-	Indent           string
-	PrintTypes       bool
-	ChangedSeparator string
+	Normal             Tag
+	Added              Tag
+	Removed            Tag
+	Changed            Tag
+	Skipped            Tag
+	SkippedSliceString func(n int) string
+	SkippedKeysString  func(n int) string
+	Prefix             string
+	Indent             string
+	PrintTypes         bool
+	ChangedSeparator   string
 	// When provided, this function will be used to compare two numbers. By default numbers are compared using their
 	// literal representation byte by byte.
 	CompareNumbers func(a, b json.Number) bool
+	// When true, only differences will be printed. By default, it will print the full json.
+	SkipMatches bool
 }
 
 // Provides a set of options in JSON format that are fully parseable.
@@ -71,9 +76,26 @@ func DefaultJSONOptions() Options {
 // use ANSI foreground color escape sequences to highlight changes.
 func DefaultConsoleOptions() Options {
 	return Options{
-		Added:            Tag{Begin: "\033[0;32m", End: "\033[0m"},
-		Removed:          Tag{Begin: "\033[0;31m", End: "\033[0m"},
-		Changed:          Tag{Begin: "\033[0;33m", End: "\033[0m"},
+		Added:   Tag{Begin: "\033[0;32m", End: "\033[0m"},
+		Removed: Tag{Begin: "\033[0;31m", End: "\033[0m"},
+		Changed: Tag{Begin: "\033[0;33m", End: "\033[0m"},
+		Skipped: Tag{Begin: "\033[0;90m", End: "\033[0m"},
+		SkippedSliceString: func(n int) string {
+			if n == 1 {
+				return "...skipped 1 array element..."
+			} else {
+				ns := strconv.FormatInt(int64(n), 10)
+				return "...skipped " + ns + " array elements..."
+			}
+		},
+		SkippedKeysString: func(n int) string {
+			if n == 1 {
+				return "...skipped 1 object key..."
+			} else {
+				ns := strconv.FormatInt(int64(n), 10)
+				return "...skipped " + ns + " object keys..."
+			}
+		},
 		ChangedSeparator: " => ",
 		Indent:           "    ",
 	}
@@ -93,7 +115,6 @@ func DefaultHTMLOptions() Options {
 
 type context struct {
 	opts    *Options
-	buf     bytes.Buffer
 	level   int
 	lastTag *Tag
 	diff    Difference
@@ -107,123 +128,126 @@ func (ctx *context) compareNumbers(a, b json.Number) bool {
 	}
 }
 
-func (ctx *context) newline(s string) {
-	ctx.buf.WriteString(s)
+func (ctx *context) terminateTag(buf *bytes.Buffer) {
 	if ctx.lastTag != nil {
-		ctx.buf.WriteString(ctx.lastTag.End)
+		buf.WriteString(ctx.lastTag.End)
+		ctx.lastTag = nil
 	}
-	ctx.buf.WriteString("\n")
-	ctx.buf.WriteString(ctx.opts.Prefix)
+}
+
+func (ctx *context) newline(buf *bytes.Buffer, s string) {
+	buf.WriteString(s)
+	ctx.terminateTag(buf)
+	buf.WriteString("\n")
+	buf.WriteString(ctx.opts.Prefix)
 	for i := 0; i < ctx.level; i++ {
-		ctx.buf.WriteString(ctx.opts.Indent)
+		buf.WriteString(ctx.opts.Indent)
 	}
-	if ctx.lastTag != nil {
-		ctx.buf.WriteString(ctx.lastTag.Begin)
-	}
+	ctx.terminateTag(buf)
 }
 
-func (ctx *context) key(k string) {
-	ctx.buf.WriteString(strconv.Quote(k))
-	ctx.buf.WriteString(": ")
+func (ctx *context) key(buf *bytes.Buffer, k string) {
+	buf.WriteString(strconv.Quote(k))
+	buf.WriteString(": ")
 }
 
-func (ctx *context) writeValue(v interface{}, full bool) {
+func (ctx *context) writeValue(buf *bytes.Buffer, v interface{}, full bool) {
 	switch vv := v.(type) {
 	case bool:
-		ctx.buf.WriteString(strconv.FormatBool(vv))
+		buf.WriteString(strconv.FormatBool(vv))
 	case json.Number:
-		ctx.buf.WriteString(string(vv))
+		buf.WriteString(string(vv))
 	case string:
-		ctx.buf.WriteString(strconv.Quote(vv))
+		buf.WriteString(strconv.Quote(vv))
 	case []interface{}:
 		if full {
 			if len(vv) == 0 {
-				ctx.buf.WriteString("[")
+				buf.WriteString("[")
 			} else {
 				ctx.level++
-				ctx.newline("[")
+				ctx.newline(buf, "[")
 			}
 			for i, v := range vv {
-				ctx.writeValue(v, true)
+				ctx.writeValue(buf, v, true)
 				if i != len(vv)-1 {
-					ctx.newline(",")
+					ctx.newline(buf, ",")
 				} else {
 					ctx.level--
-					ctx.newline("")
+					ctx.newline(buf, "")
 				}
 			}
-			ctx.buf.WriteString("]")
+			buf.WriteString("]")
 		} else {
-			ctx.buf.WriteString("[]")
+			buf.WriteString("[]")
 		}
 	case map[string]interface{}:
 		if full {
 			if len(vv) == 0 {
-				ctx.buf.WriteString("{")
+				buf.WriteString("{")
 			} else {
 				ctx.level++
-				ctx.newline("{")
+				ctx.newline(buf, "{")
 			}
 			i := 0
 			for k, v := range vv {
-				ctx.key(k)
-				ctx.writeValue(v, true)
+				ctx.key(buf, k)
+				ctx.writeValue(buf, v, true)
 				if i != len(vv)-1 {
-					ctx.newline(",")
+					ctx.newline(buf, ",")
 				} else {
 					ctx.level--
-					ctx.newline("")
+					ctx.newline(buf, "")
 				}
 				i++
 			}
-			ctx.buf.WriteString("}")
+			buf.WriteString("}")
 		} else {
-			ctx.buf.WriteString("{}")
+			buf.WriteString("{}")
 		}
 	default:
-		ctx.buf.WriteString("null")
+		buf.WriteString("null")
 	}
 
-	ctx.writeTypeMaybe(v)
+	ctx.writeTypeMaybe(buf, v)
 }
 
-func (ctx *context) writeTypeMaybe(v interface{}) {
+func (ctx *context) writeTypeMaybe(buf *bytes.Buffer, v interface{}) {
 	if ctx.opts.PrintTypes {
-		ctx.buf.WriteString(" ")
-		ctx.writeType(v)
+		buf.WriteString(" ")
+		ctx.writeType(buf, v)
 	}
 }
 
-func (ctx *context) writeType(v interface{}) {
+func (ctx *context) writeType(buf *bytes.Buffer, v interface{}) {
 	switch v.(type) {
 	case bool:
-		ctx.buf.WriteString("(boolean)")
+		buf.WriteString("(boolean)")
 	case json.Number:
-		ctx.buf.WriteString("(number)")
+		buf.WriteString("(number)")
 	case string:
-		ctx.buf.WriteString("(string)")
+		buf.WriteString("(string)")
 	case []interface{}:
-		ctx.buf.WriteString("(array)")
+		buf.WriteString("(array)")
 	case map[string]interface{}:
-		ctx.buf.WriteString("(object)")
+		buf.WriteString("(object)")
 	default:
-		ctx.buf.WriteString("(null)")
+		buf.WriteString("(null)")
 	}
 }
 
-func (ctx *context) writeMismatch(a, b interface{}) {
-	ctx.writeValue(a, false)
-	ctx.buf.WriteString(ctx.opts.ChangedSeparator)
-	ctx.writeValue(b, false)
+func (ctx *context) writeMismatch(buf *bytes.Buffer, a, b interface{}) {
+	ctx.writeValue(buf, a, false)
+	buf.WriteString(ctx.opts.ChangedSeparator)
+	ctx.writeValue(buf, b, false)
 }
 
-func (ctx *context) tag(tag *Tag) {
+func (ctx *context) tag(buf *bytes.Buffer, tag *Tag) {
 	if ctx.lastTag == tag {
 		return
 	} else if ctx.lastTag != nil {
-		ctx.buf.WriteString(ctx.lastTag.End)
+		buf.WriteString(ctx.lastTag.End)
 	}
-	ctx.buf.WriteString(tag.Begin)
+	buf.WriteString(tag.Begin)
 	ctx.lastTag = tag
 }
 
@@ -237,53 +261,87 @@ func (ctx *context) result(d Difference) {
 	}
 }
 
-func (ctx *context) printMismatch(a, b interface{}) {
-	ctx.tag(&ctx.opts.Changed)
-	ctx.writeMismatch(a, b)
+func (ctx *context) printMismatch(buf *bytes.Buffer, a, b interface{}) {
+	ctx.tag(buf, &ctx.opts.Changed)
+	ctx.writeMismatch(buf, a, b)
 }
 
-func (ctx *context) printDiff(a, b interface{}) {
+func (ctx *context) printSkipped(buf *bytes.Buffer, n *int, strfunc func(n int) string, last bool) {
+	if *n == 0 {
+		return
+	}
+	ctx.tag(buf, &ctx.opts.Skipped)
+	buf.WriteString(strfunc(*n))
+	if !last {
+		ctx.tag(buf, &ctx.opts.Normal)
+		ctx.newline(buf, ",")
+	}
+	*n = 0
+}
+
+func (ctx *context) finalize(buf *bytes.Buffer) string {
+	ctx.terminateTag(buf)
+	return buf.String()
+}
+
+func (ctx *context) printDiff(a, b interface{}) string {
+	var buf bytes.Buffer
+
 	if a == nil || b == nil {
+		// either is nil, means there are just two cases:
+		// 1. both are nil => match
+		// 2. one of them is nil => mismatch
 		if a == nil && b == nil {
-			ctx.tag(&ctx.opts.Normal)
-			ctx.writeValue(a, false)
-			ctx.result(FullMatch)
+			// match
+			if !ctx.opts.SkipMatches {
+				ctx.tag(&buf, &ctx.opts.Normal)
+				ctx.writeValue(&buf, a, false)
+				ctx.result(FullMatch)
+			}
 		} else {
-			ctx.printMismatch(a, b)
+			// mismatch
+			ctx.printMismatch(&buf, a, b)
 			ctx.result(NoMatch)
 		}
-		return
+		return ctx.finalize(&buf)
 	}
 
 	ka := reflect.TypeOf(a).Kind()
 	kb := reflect.TypeOf(b).Kind()
 	if ka != kb {
-		ctx.printMismatch(a, b)
+		// Go type does not match, this is definitely a mismatch since
+		// we parse JSON into interface{}
+		ctx.printMismatch(&buf, a, b)
 		ctx.result(NoMatch)
-		return
+		return ctx.finalize(&buf)
 	}
+
+	// big switch here handles type-specific mismatches and returns if that's the case
+	// buf if control flow goes past through this switch, it's a match
+	// NOTE: ka == kb at this point
 	switch ka {
 	case reflect.Bool:
 		if a.(bool) != b.(bool) {
-			ctx.printMismatch(a, b)
+			ctx.printMismatch(&buf, a, b)
 			ctx.result(NoMatch)
-			return
+			return ctx.finalize(&buf)
 		}
 	case reflect.String:
+		// string can be a json.Number here too (because it's a string type)
 		switch aa := a.(type) {
 		case json.Number:
 			bb, ok := b.(json.Number)
 			if !ok || !ctx.compareNumbers(aa, bb) {
-				ctx.printMismatch(a, b)
+				ctx.printMismatch(&buf, a, b)
 				ctx.result(NoMatch)
-				return
+				return ctx.finalize(&buf)
 			}
 		case string:
 			bb, ok := b.(string)
 			if !ok || aa != bb {
-				ctx.printMismatch(a, b)
+				ctx.printMismatch(&buf, a, b)
 				ctx.result(NoMatch)
-				return
+				return ctx.finalize(&buf)
 			}
 		}
 	case reflect.Slice:
@@ -293,36 +351,71 @@ func (ctx *context) printDiff(a, b interface{}) {
 		if sblen > max {
 			max = sblen
 		}
-		ctx.tag(&ctx.opts.Normal)
+		ctx.tag(&buf, &ctx.opts.Normal)
 		if max == 0 {
-			ctx.buf.WriteString("[")
+			buf.WriteString("[")
 		} else {
 			ctx.level++
-			ctx.newline("[")
+			ctx.newline(&buf, "[")
 		}
+
+		// did we see any changes between slice elements
+		// it's initialized with this expression which means that at least one slice has len() > 0
+		// and slice lengths are not equal, in this case we definitely have some changes
+		seenDiff := max > 0 && salen != sblen
+
+		// track how many elements we skipped with no changes
+		noDiffSpan := 0
 		for i := 0; i < max; i++ {
+			equals := true
 			if i < salen && i < sblen {
-				ctx.printDiff(sa[i], sb[i])
+				diff := ctx.printDiff(sa[i], sb[i])
+				if len(diff) > 0 {
+					equals = false
+					ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, false)
+					buf.WriteString(diff)
+				}
 			} else if i < salen {
-				ctx.tag(&ctx.opts.Removed)
-				ctx.writeValue(sa[i], true)
+				equals = false
+				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, false)
+				ctx.tag(&buf, &ctx.opts.Removed)
+				ctx.writeValue(&buf, sa[i], true)
 				ctx.result(SupersetMatch)
 			} else if i < sblen {
-				ctx.tag(&ctx.opts.Added)
-				ctx.writeValue(sb[i], true)
+				equals = false
+				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, false)
+				ctx.tag(&buf, &ctx.opts.Added)
+				ctx.writeValue(&buf, sb[i], true)
 				ctx.result(NoMatch)
 			}
-			ctx.tag(&ctx.opts.Normal)
+			if ctx.opts.SkipMatches {
+				if equals {
+					noDiffSpan++
+				} else {
+					seenDiff = true
+				}
+			}
+			ctx.tag(&buf, &ctx.opts.Normal)
 			if i != max-1 {
-				ctx.newline(",")
+				// it was not the last element
+				if !ctx.opts.SkipMatches || !equals {
+					ctx.newline(&buf, ",")
+				}
 			} else {
+				// it was the last element
+				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, true)
 				ctx.level--
-				ctx.newline("")
+				ctx.newline(&buf, "")
 			}
 		}
-		ctx.buf.WriteString("]")
-		ctx.writeTypeMaybe(a)
-		return
+		buf.WriteString("]")
+		ctx.writeTypeMaybe(&buf, a)
+
+		if ctx.opts.SkipMatches && !seenDiff {
+			return ""
+		}
+
+		return ctx.finalize(&buf)
 	case reflect.Map:
 		ma, mb := a.(map[string]interface{}), b.(map[string]interface{})
 		keysMap := make(map[string]bool)
@@ -337,45 +430,80 @@ func (ctx *context) printDiff(a, b interface{}) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		ctx.tag(&ctx.opts.Normal)
+		ctx.tag(&buf, &ctx.opts.Normal)
 		if len(keys) == 0 {
-			ctx.buf.WriteString("{")
+			buf.WriteString("{")
 		} else {
 			ctx.level++
-			ctx.newline("{")
+			ctx.newline(&buf, "{")
 		}
+
+		seenDiff := false
+		noDiffSpan := 0
+
 		for i, k := range keys {
 			va, aok := ma[k]
 			vb, bok := mb[k]
+			equals := true
 			if aok && bok {
-				ctx.key(k)
-				ctx.printDiff(va, vb)
+				diff := ctx.printDiff(va, vb)
+				if len(diff) > 0 {
+					equals = false
+					ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, false)
+					ctx.key(&buf, k)
+					buf.WriteString(diff)
+				}
 			} else if aok {
-				ctx.tag(&ctx.opts.Removed)
-				ctx.key(k)
-				ctx.writeValue(va, true)
+				equals = false
+				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, false)
+				ctx.tag(&buf, &ctx.opts.Removed)
+				ctx.key(&buf, k)
+				ctx.writeValue(&buf, va, true)
 				ctx.result(SupersetMatch)
 			} else if bok {
-				ctx.tag(&ctx.opts.Added)
-				ctx.key(k)
-				ctx.writeValue(vb, true)
+				equals = false
+				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, false)
+				ctx.tag(&buf, &ctx.opts.Added)
+				ctx.key(&buf, k)
+				ctx.writeValue(&buf, vb, true)
 				ctx.result(NoMatch)
 			}
-			ctx.tag(&ctx.opts.Normal)
+			if ctx.opts.SkipMatches {
+				if equals {
+					noDiffSpan++
+				} else {
+					seenDiff = true
+				}
+			}
+
+			ctx.tag(&buf, &ctx.opts.Normal)
 			if i != len(keys)-1 {
-				ctx.newline(",")
+				// it was not the last key
+				if !ctx.opts.SkipMatches || !equals {
+					ctx.newline(&buf, ",")
+				}
 			} else {
+				// it was the last key
+				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, true)
 				ctx.level--
-				ctx.newline("")
+				ctx.newline(&buf, "")
 			}
 		}
-		ctx.buf.WriteString("}")
-		ctx.writeTypeMaybe(a)
-		return
+		buf.WriteString("}")
+		ctx.writeTypeMaybe(&buf, a)
+
+		if ctx.opts.SkipMatches && !seenDiff {
+			return ""
+		}
+
+		return ctx.finalize(&buf)
 	}
-	ctx.tag(&ctx.opts.Normal)
-	ctx.writeValue(a, true)
-	ctx.result(FullMatch)
+	if !ctx.opts.SkipMatches {
+		ctx.tag(&buf, &ctx.opts.Normal)
+		ctx.writeValue(&buf, a, true)
+		ctx.result(FullMatch)
+	}
+	return ctx.finalize(&buf)
 }
 
 // Compares two JSON documents using given options. Returns difference type and
@@ -421,10 +549,9 @@ func Compare(a, b []byte, opts *Options) (Difference, string) {
 		return SecondArgIsInvalidJson, "second argument is invalid json"
 	}
 
+	var buf bytes.Buffer
+
 	ctx := context{opts: opts}
-	ctx.printDiff(av, bv)
-	if ctx.lastTag != nil {
-		ctx.buf.WriteString(ctx.lastTag.End)
-	}
-	return ctx.diff, ctx.buf.String()
+	buf.WriteString(ctx.printDiff(av, bv))
+	return ctx.diff, buf.String()
 }
