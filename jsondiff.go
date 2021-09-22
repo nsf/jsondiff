@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type Difference int
@@ -56,6 +57,7 @@ type Options struct {
 	CompareNumbers func(a, b json.Number) bool
 	// When true, only differences will be printed. By default, it will print the full json.
 	SkipMatches bool
+	Skip        func(path string, a, b interface{}) bool
 }
 
 // Provides a set of options in JSON format that are fully parseable.
@@ -244,7 +246,20 @@ func (ctx *context) printMismatch(a, b interface{}) {
 	ctx.writeMismatch(a, b)
 }
 
-func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
+func (ctx *context) shouldSkip(path string, a, b interface{}) bool {
+	if path != "" && ctx.opts.Skip != nil {
+		// Remove . for root level.
+		path = strings.TrimLeft(path, ".")
+		return ctx.opts.Skip(path, a, b)
+	}
+	return false
+}
+
+func (ctx *context) printDiff(path string, a, b interface{}, beforePrint func()) bool {
+	if ctx.shouldSkip(path, a, b) {
+		return false
+	}
+
 	gotDifference := false
 
 	if a == nil || b == nil {
@@ -338,7 +353,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 		for i := 0; i < max; i++ {
 			hadChanges := false
 			if i < salen && i < sblen {
-				hadChanges = ctx.printDiff(sa[i], sb[i], func() {
+				hadChanges = ctx.printDiff(path, sa[i], sb[i], func() {
 					writeHeader()
 				})
 			} else if i < salen {
@@ -425,7 +440,7 @@ func (ctx *context) printDiff(a, b interface{}, beforePrint func()) bool {
 			vb, bok := mb[k]
 			hadChanges := false
 			if aok && bok {
-				hadChanges = ctx.printDiff(va, vb, func() {
+				hadChanges = ctx.printDiff(path + "." + k, va, vb, func() {
 					writeHeader()
 					ctx.key(k)
 				})
@@ -525,7 +540,7 @@ func Compare(a, b []byte, opts *Options) (Difference, string) {
 	}
 
 	ctx := context{opts: opts}
-	ctx.printDiff(av, bv, func() {})
+	ctx.printDiff("", av, bv, func() {})
 	if ctx.lastTag != nil {
 		ctx.buf.WriteString(ctx.lastTag.End)
 	}
