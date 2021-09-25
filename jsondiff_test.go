@@ -40,11 +40,18 @@ func TestCompare(t *testing.T) {
 	}
 }
 
+type diffFlag int
+
+const (
+	diffSkipMatches diffFlag = 1 << iota
+	diffNoSkipString
+)
+
 var diffStringCases = []struct {
 	a        string
 	b        string
 	expected string
-	skipm    bool
+	flags    diffFlag
 }{
 	{`{"b":"foo","a":[1,2,3],"c":"zoo","d":"Joe"}`, `{"a":[1,2,4,5],"b":"baz","c":"zoo"}`, `
 {
@@ -58,7 +65,7 @@ var diffStringCases = []struct {
   "c": "zoo",
   (R:"d": "Joe":R)
 }
-	`, false},
+	`, 0},
 	{`{"a":[{"foo":"bar"},{"b": "c"}]}`, `{"a":[{"foo":"bar"},{"b": "d"}]}`, `
 {
   "a": [
@@ -70,7 +77,7 @@ var diffStringCases = []struct {
     }
   ]
 }
-	`, false},
+	`, 0},
 	{`{"b":"foo","a":[1,2,3],"c":"zoo","d":"Joe"}`, `{"a":[1,2,4,5],"b":"baz","c":"zoo"}`, `
 {
   "a": [
@@ -82,7 +89,7 @@ var diffStringCases = []struct {
   (S:[skipped keys:1]:S),
   (R:"d": "Joe":R)
 }
-	`, true},
+	`, diffSkipMatches},
 	{`{"a":[{"foo":"bar"},{"b": "c"}]}`, `{"a":[{"foo":"bar"},{"b": "d"}]}`, `
 {
   "a": [
@@ -92,21 +99,60 @@ var diffStringCases = []struct {
     }
   ]
 }
-	`, true},
+	`, diffSkipMatches},
 	{`[1,2,3,4,5]`, `[1,3,3,4,5]`, `
 [
   (S:[skipped elements:1]:S),
   (C:2 => 3:C),
   (S:[skipped elements:3]:S)
 ]
-	`, true},
+	`, diffSkipMatches},
 	{`{"a":1,"b":2,"c":3}`, `{"a":1,"b":"foo","c":3}`, `
 {
   (S:[skipped keys:1]:S),
   "b": (C:2 => "foo":C),
   (S:[skipped keys:1]:S)
 }
-	`, true},
+	`, diffSkipMatches},
+	{`{"a":[1,2,3]}`, `{"b":"foo"}`, `
+ {
+  (R:"a": [
+    1,
+    2,
+    3
+  ]:R),
+  (A:"b": "foo":A)
+}
+	`, 0},
+	{`{"b":"foo","a":[1,2,3],"c":"zoo","d":"Joe"}`, `{"a":[1,2,4,5],"b":"baz","c":"zoo"}`, `
+{
+  "a": [
+    (C:3 => 4:C),
+    (A:5:A)
+  ],
+  "b": (C:"foo" => "baz":C),
+  (R:"d": "Joe":R)
+}
+	`, diffSkipMatches | diffNoSkipString},
+	{`{"a":[{"foo":"bar"},{"b": "c"}]}`, `{"a":[{"foo":"bar"},{"b": "d"}]}`, `
+{
+  "a": [
+    {
+      "b": (C:"c" => "d":C)
+    }
+  ]
+}
+	`, diffSkipMatches | diffNoSkipString},
+	{`[1,2,3,4,5]`, `[1,3,3,4,5]`, `
+[
+  (C:2 => 3:C)
+]
+	`, diffSkipMatches | diffNoSkipString},
+	{`{"a":1,"b":2,"c":3}`, `{"a":1,"b":"foo","c":3}`, `
+{
+  "b": (C:2 => "foo":C)
+}
+	`, diffSkipMatches | diffNoSkipString},
 }
 
 func TestDiffString(t *testing.T) {
@@ -121,7 +167,13 @@ func TestDiffString(t *testing.T) {
 	for i, c := range diffStringCases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			lopts := opts
-			lopts.SkipMatches = c.skipm
+			if c.flags&diffSkipMatches != 0 {
+				lopts.SkipMatches = true
+			}
+			if c.flags&diffNoSkipString != 0 {
+				lopts.SkippedKeysString = nil
+				lopts.SkippedSliceString = nil
+			}
 			expected := strings.TrimSpace(c.expected)
 			_, diff := Compare([]byte(c.a), []byte(c.b), &lopts)
 			if diff != expected {

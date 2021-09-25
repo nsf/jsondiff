@@ -137,13 +137,11 @@ func (ctx *context) terminateTag(buf *bytes.Buffer) {
 
 func (ctx *context) newline(buf *bytes.Buffer, s string) {
 	buf.WriteString(s)
-	ctx.terminateTag(buf)
 	buf.WriteString("\n")
 	buf.WriteString(ctx.opts.Prefix)
 	for i := 0; i < ctx.level; i++ {
 		buf.WriteString(ctx.opts.Indent)
 	}
-	ctx.terminateTag(buf)
 }
 
 func (ctx *context) key(buf *bytes.Buffer, k string) {
@@ -267,7 +265,7 @@ func (ctx *context) printMismatch(buf *bytes.Buffer, a, b interface{}) {
 }
 
 func (ctx *context) printSkipped(buf *bytes.Buffer, n *int, strfunc func(n int) string, last bool) {
-	if *n == 0 {
+	if *n == 0 || strfunc == nil {
 		return
 	}
 	ctx.tag(buf, &ctx.opts.Skipped)
@@ -282,6 +280,224 @@ func (ctx *context) printSkipped(buf *bytes.Buffer, n *int, strfunc func(n int) 
 func (ctx *context) finalize(buf *bytes.Buffer) string {
 	ctx.terminateTag(buf)
 	return buf.String()
+}
+
+type collectionConfig struct {
+	open    string
+	close   string
+	skipped func(n int) string
+	value   interface{}
+}
+
+type dualIterator interface {
+	clone() dualIterator
+	count() int
+	next() (a interface{}, aOK bool, b interface{}, bOK bool, i int)
+	key(buf *bytes.Buffer)
+}
+
+type dualSliceIterator struct {
+	a       []interface{}
+	b       []interface{}
+	max     int
+	current int
+}
+
+func (it *dualSliceIterator) clone() dualIterator {
+	copy := *it
+	return &copy
+}
+
+func (it *dualSliceIterator) count() int {
+	return it.max
+}
+
+func (it *dualSliceIterator) next() (a interface{}, aOK bool, b interface{}, bOK bool, i int) {
+	it.current++
+	i = it.current
+	if i <= it.max {
+		if i < len(it.a) {
+			a = it.a[i]
+			aOK = true
+		}
+		if i < len(it.b) {
+			b = it.b[i]
+			bOK = true
+		}
+	} else {
+		i = -1
+	}
+	return
+}
+
+func (it *dualSliceIterator) key(buf *bytes.Buffer) {
+	// noop
+}
+
+type dualMapIterator struct {
+	a       map[string]interface{}
+	b       map[string]interface{}
+	keys    []string
+	current int
+}
+
+func (it *dualMapIterator) clone() dualIterator {
+	copy := *it
+	return &copy
+}
+
+func (it *dualMapIterator) count() int {
+	return len(it.keys)
+}
+
+func (it *dualMapIterator) next() (a interface{}, aOK bool, b interface{}, bOK bool, i int) {
+	it.current++
+	i = it.current
+	if i < len(it.keys) {
+		key := it.keys[i]
+		a, aOK = it.a[key]
+		b, bOK = it.b[key]
+	} else {
+		i = -1
+	}
+	return
+}
+
+func (it *dualMapIterator) key(buf *bytes.Buffer) {
+	key := it.keys[it.current]
+	buf.WriteString(strconv.Quote(key))
+	buf.WriteString(": ")
+}
+
+func makeDualMapIterator(a, b map[string]interface{}) dualIterator {
+	keysMap := make(map[string]struct{})
+	for k := range a {
+		keysMap[k] = struct{}{}
+	}
+	for k := range b {
+		keysMap[k] = struct{}{}
+	}
+	keys := make([]string, 0, len(keysMap))
+	for k := range keysMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return &dualMapIterator{
+		a:       a,
+		b:       b,
+		keys:    keys,
+		current: -1,
+	}
+}
+
+func makeDualSliceIterator(a, b []interface{}) dualIterator {
+	max := len(a)
+	if len(b) > max {
+		max = len(b)
+	}
+	return &dualSliceIterator{
+		a:       a,
+		b:       b,
+		max:     max,
+		current: -1,
+	}
+}
+
+func (ctx *context) collectDiffs(it dualIterator) (diffs []string, last int) {
+	ctx.level++
+	last = -1
+	for {
+		a, aok, b, bok, i := it.next()
+		if i == -1 {
+			break
+		}
+		var diff string
+		if aok && bok {
+			diff = ctx.printDiff(a, b)
+		}
+		if len(diff) > 0 || aok != bok {
+			last = i
+		}
+		diffs = append(diffs, diff)
+	}
+	ctx.level--
+	return
+}
+
+func (ctx *context) printCollectionDiff(cfg *collectionConfig, it dualIterator) string {
+	var buf bytes.Buffer
+	diffs, lastDiff := ctx.collectDiffs(it.clone())
+	if ctx.opts.SkipMatches && lastDiff == -1 {
+		// no diffs
+		return ""
+	}
+
+	// some diffs or empty collection
+	ctx.tag(&buf, &ctx.opts.Normal)
+	if it.count() == 0 {
+		buf.WriteString(cfg.open)
+		buf.WriteString(cfg.close)
+		ctx.writeTypeMaybe(&buf, cfg.value)
+		return ctx.finalize(&buf)
+	} else {
+		ctx.level++
+		ctx.newline(&buf, cfg.open)
+	}
+
+	noDiffSpan := 0
+	for {
+		va, aok, vb, bok, i := it.next()
+		equals := true
+		if aok && bok {
+			diff := diffs[i]
+			if len(diff) > 0 {
+				equals = false
+				ctx.printSkipped(&buf, &noDiffSpan, cfg.skipped, false)
+				it.key(&buf)
+				buf.WriteString(diff)
+			}
+		} else if aok {
+			equals = false
+			ctx.printSkipped(&buf, &noDiffSpan, cfg.skipped, false)
+			ctx.tag(&buf, &ctx.opts.Removed)
+			it.key(&buf)
+			ctx.writeValue(&buf, va, true)
+			ctx.result(SupersetMatch)
+		} else if bok {
+			equals = false
+			ctx.printSkipped(&buf, &noDiffSpan, cfg.skipped, false)
+			ctx.tag(&buf, &ctx.opts.Added)
+			it.key(&buf)
+			ctx.writeValue(&buf, vb, true)
+			ctx.result(NoMatch)
+		}
+		if ctx.opts.SkipMatches && equals {
+			noDiffSpan++
+		}
+
+		wroteItem := !ctx.opts.SkipMatches || !equals
+		willWriteMoreItems :=
+			(ctx.opts.SkipMatches && i < lastDiff) ||
+				(ctx.opts.SkipMatches && cfg.skipped != nil && lastDiff < it.count()-1) ||
+				(!ctx.opts.SkipMatches && i < it.count()-1)
+
+		if wroteItem && willWriteMoreItems {
+			ctx.tag(&buf, &ctx.opts.Normal)
+			ctx.newline(&buf, ",")
+		}
+		if i == it.count()-1 {
+			// we're done
+			ctx.printSkipped(&buf, &noDiffSpan, cfg.skipped, true)
+			ctx.level--
+			ctx.tag(&buf, &ctx.opts.Normal)
+			ctx.newline(&buf, "")
+			break
+		}
+	}
+
+	buf.WriteString(cfg.close)
+	ctx.writeTypeMaybe(&buf, cfg.value)
+	return ctx.finalize(&buf)
 }
 
 func (ctx *context) printDiff(a, b interface{}) string {
@@ -346,157 +562,20 @@ func (ctx *context) printDiff(a, b interface{}) string {
 		}
 	case reflect.Slice:
 		sa, sb := a.([]interface{}), b.([]interface{})
-		salen, sblen := len(sa), len(sb)
-		max := salen
-		if sblen > max {
-			max = sblen
-		}
-		ctx.tag(&buf, &ctx.opts.Normal)
-		if max == 0 {
-			buf.WriteString("[")
-		} else {
-			ctx.level++
-			ctx.newline(&buf, "[")
-		}
-
-		// did we see any changes between slice elements
-		// it's initialized with this expression which means that at least one slice has len() > 0
-		// and slice lengths are not equal, in this case we definitely have some changes
-		seenDiff := max > 0 && salen != sblen
-
-		// track how many elements we skipped with no changes
-		noDiffSpan := 0
-		for i := 0; i < max; i++ {
-			equals := true
-			if i < salen && i < sblen {
-				diff := ctx.printDiff(sa[i], sb[i])
-				if len(diff) > 0 {
-					equals = false
-					ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, false)
-					buf.WriteString(diff)
-				}
-			} else if i < salen {
-				equals = false
-				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, false)
-				ctx.tag(&buf, &ctx.opts.Removed)
-				ctx.writeValue(&buf, sa[i], true)
-				ctx.result(SupersetMatch)
-			} else if i < sblen {
-				equals = false
-				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, false)
-				ctx.tag(&buf, &ctx.opts.Added)
-				ctx.writeValue(&buf, sb[i], true)
-				ctx.result(NoMatch)
-			}
-			if ctx.opts.SkipMatches {
-				if equals {
-					noDiffSpan++
-				} else {
-					seenDiff = true
-				}
-			}
-			ctx.tag(&buf, &ctx.opts.Normal)
-			if i != max-1 {
-				// it was not the last element
-				if !ctx.opts.SkipMatches || !equals {
-					ctx.newline(&buf, ",")
-				}
-			} else {
-				// it was the last element
-				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedSliceString, true)
-				ctx.level--
-				ctx.newline(&buf, "")
-			}
-		}
-		buf.WriteString("]")
-		ctx.writeTypeMaybe(&buf, a)
-
-		if ctx.opts.SkipMatches && !seenDiff {
-			return ""
-		}
-
-		return ctx.finalize(&buf)
+		return ctx.printCollectionDiff(&collectionConfig{
+			open:    "[",
+			close:   "]",
+			skipped: ctx.opts.SkippedSliceString,
+			value:   a,
+		}, makeDualSliceIterator(sa, sb))
 	case reflect.Map:
 		ma, mb := a.(map[string]interface{}), b.(map[string]interface{})
-		keysMap := make(map[string]bool)
-		for k := range ma {
-			keysMap[k] = true
-		}
-		for k := range mb {
-			keysMap[k] = true
-		}
-		keys := make([]string, 0, len(keysMap))
-		for k := range keysMap {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		ctx.tag(&buf, &ctx.opts.Normal)
-		if len(keys) == 0 {
-			buf.WriteString("{")
-		} else {
-			ctx.level++
-			ctx.newline(&buf, "{")
-		}
-
-		seenDiff := false
-		noDiffSpan := 0
-
-		for i, k := range keys {
-			va, aok := ma[k]
-			vb, bok := mb[k]
-			equals := true
-			if aok && bok {
-				diff := ctx.printDiff(va, vb)
-				if len(diff) > 0 {
-					equals = false
-					ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, false)
-					ctx.key(&buf, k)
-					buf.WriteString(diff)
-				}
-			} else if aok {
-				equals = false
-				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, false)
-				ctx.tag(&buf, &ctx.opts.Removed)
-				ctx.key(&buf, k)
-				ctx.writeValue(&buf, va, true)
-				ctx.result(SupersetMatch)
-			} else if bok {
-				equals = false
-				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, false)
-				ctx.tag(&buf, &ctx.opts.Added)
-				ctx.key(&buf, k)
-				ctx.writeValue(&buf, vb, true)
-				ctx.result(NoMatch)
-			}
-			if ctx.opts.SkipMatches {
-				if equals {
-					noDiffSpan++
-				} else {
-					seenDiff = true
-				}
-			}
-
-			ctx.tag(&buf, &ctx.opts.Normal)
-			if i != len(keys)-1 {
-				// it was not the last key
-				if !ctx.opts.SkipMatches || !equals {
-					ctx.newline(&buf, ",")
-				}
-			} else {
-				// it was the last key
-				ctx.printSkipped(&buf, &noDiffSpan, ctx.opts.SkippedKeysString, true)
-				ctx.level--
-				ctx.newline(&buf, "")
-			}
-		}
-		buf.WriteString("}")
-		ctx.writeTypeMaybe(&buf, a)
-
-		if ctx.opts.SkipMatches && !seenDiff {
-			return ""
-		}
-
-		return ctx.finalize(&buf)
+		return ctx.printCollectionDiff(&collectionConfig{
+			open:    "{",
+			close:   "}",
+			skipped: ctx.opts.SkippedKeysString,
+			value:   a,
+		}, makeDualMapIterator(ma, mb))
 	}
 	if !ctx.opts.SkipMatches {
 		ctx.tag(&buf, &ctx.opts.Normal)
