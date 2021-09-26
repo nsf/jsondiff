@@ -43,22 +43,40 @@ type Tag struct {
 }
 
 type Options struct {
-	Normal             Tag
-	Added              Tag
-	Removed            Tag
-	Changed            Tag
-	Skipped            Tag
-	SkippedSliceString func(n int) string
-	SkippedKeysString  func(n int) string
-	Prefix             string
-	Indent             string
-	PrintTypes         bool
-	ChangedSeparator   string
+	Normal                Tag
+	Added                 Tag
+	Removed               Tag
+	Changed               Tag
+	Skipped               Tag
+	SkippedArrayElement   func(n int) string
+	SkippedObjectProperty func(n int) string
+	Prefix                string
+	Indent                string
+	PrintTypes            bool
+	ChangedSeparator      string
 	// When provided, this function will be used to compare two numbers. By default numbers are compared using their
 	// literal representation byte by byte.
 	CompareNumbers func(a, b json.Number) bool
 	// When true, only differences will be printed. By default, it will print the full json.
 	SkipMatches bool
+}
+
+func SkippedArrayElement(n int) string {
+	if n == 1 {
+		return "...skipped 1 array element..."
+	} else {
+		ns := strconv.FormatInt(int64(n), 10)
+		return "...skipped " + ns + " array elements..."
+	}
+}
+
+func SkippedObjectProperty(n int) string {
+	if n == 1 {
+		return "...skipped 1 object property..."
+	} else {
+		ns := strconv.FormatInt(int64(n), 10)
+		return "...skipped " + ns + " object properties..."
+	}
 }
 
 // Provides a set of options in JSON format that are fully parseable.
@@ -76,28 +94,14 @@ func DefaultJSONOptions() Options {
 // use ANSI foreground color escape sequences to highlight changes.
 func DefaultConsoleOptions() Options {
 	return Options{
-		Added:   Tag{Begin: "\033[0;32m", End: "\033[0m"},
-		Removed: Tag{Begin: "\033[0;31m", End: "\033[0m"},
-		Changed: Tag{Begin: "\033[0;33m", End: "\033[0m"},
-		Skipped: Tag{Begin: "\033[0;90m", End: "\033[0m"},
-		SkippedSliceString: func(n int) string {
-			if n == 1 {
-				return "...skipped 1 array element..."
-			} else {
-				ns := strconv.FormatInt(int64(n), 10)
-				return "...skipped " + ns + " array elements..."
-			}
-		},
-		SkippedKeysString: func(n int) string {
-			if n == 1 {
-				return "...skipped 1 object key..."
-			} else {
-				ns := strconv.FormatInt(int64(n), 10)
-				return "...skipped " + ns + " object keys..."
-			}
-		},
-		ChangedSeparator: " => ",
-		Indent:           "    ",
+		Added:                 Tag{Begin: "\033[0;32m", End: "\033[0m"},
+		Removed:               Tag{Begin: "\033[0;31m", End: "\033[0m"},
+		Changed:               Tag{Begin: "\033[0;33m", End: "\033[0m"},
+		Skipped:               Tag{Begin: "\033[0;90m", End: "\033[0m"},
+		SkippedArrayElement:   SkippedArrayElement,
+		SkippedObjectProperty: SkippedObjectProperty,
+		ChangedSeparator:      " => ",
+		Indent:                "    ",
 	}
 }
 
@@ -105,11 +109,14 @@ func DefaultConsoleOptions() Options {
 // inside <pre> tag.
 func DefaultHTMLOptions() Options {
 	return Options{
-		Added:            Tag{Begin: `<span style="background-color: #8bff7f">`, End: `</span>`},
-		Removed:          Tag{Begin: `<span style="background-color: #fd7f7f">`, End: `</span>`},
-		Changed:          Tag{Begin: `<span style="background-color: #fcff7f">`, End: `</span>`},
-		ChangedSeparator: " => ",
-		Indent:           "    ",
+		Added:                 Tag{Begin: `<span style="background-color: #8bff7f">`, End: `</span>`},
+		Removed:               Tag{Begin: `<span style="background-color: #fd7f7f">`, End: `</span>`},
+		Changed:               Tag{Begin: `<span style="background-color: #fcff7f">`, End: `</span>`},
+		Skipped:               Tag{Begin: `<span style="color: rgba(0, 0, 0, 0.3)">`, End: `</span>`},
+		SkippedArrayElement:   SkippedArrayElement,
+		SkippedObjectProperty: SkippedObjectProperty,
+		ChangedSeparator:      " => ",
+		Indent:                "    ",
 	}
 }
 
@@ -565,7 +572,7 @@ func (ctx *context) printDiff(a, b interface{}) string {
 		return ctx.printCollectionDiff(&collectionConfig{
 			open:    "[",
 			close:   "]",
-			skipped: ctx.opts.SkippedSliceString,
+			skipped: ctx.opts.SkippedArrayElement,
 			value:   a,
 		}, makeDualSliceIterator(sa, sb))
 	case reflect.Map:
@@ -573,7 +580,7 @@ func (ctx *context) printDiff(a, b interface{}) string {
 		return ctx.printCollectionDiff(&collectionConfig{
 			open:    "{",
 			close:   "}",
-			skipped: ctx.opts.SkippedKeysString,
+			skipped: ctx.opts.SkippedObjectProperty,
 			value:   a,
 		}, makeDualMapIterator(ma, mb))
 	}

@@ -161,8 +161,8 @@ func TestDiffString(t *testing.T) {
 	opts.Removed = Tag{Begin: "(R:", End: ":R)"}
 	opts.Changed = Tag{Begin: "(C:", End: ":C)"}
 	opts.Skipped = Tag{Begin: "(S:", End: ":S)"}
-	opts.SkippedKeysString = func(n int) string { return fmt.Sprintf("[skipped keys:%d]", n) }
-	opts.SkippedSliceString = func(n int) string { return fmt.Sprintf("[skipped elements:%d]", n) }
+	opts.SkippedObjectProperty = func(n int) string { return fmt.Sprintf("[skipped keys:%d]", n) }
+	opts.SkippedArrayElement = func(n int) string { return fmt.Sprintf("[skipped elements:%d]", n) }
 	opts.Indent = "  "
 	for i, c := range diffStringCases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
@@ -171,8 +171,8 @@ func TestDiffString(t *testing.T) {
 				lopts.SkipMatches = true
 			}
 			if c.flags&diffNoSkipString != 0 {
-				lopts.SkippedKeysString = nil
-				lopts.SkippedSliceString = nil
+				lopts.SkippedObjectProperty = nil
+				lopts.SkippedArrayElement = nil
 			}
 			expected := strings.TrimSpace(c.expected)
 			_, diff := Compare([]byte(c.a), []byte(c.b), &lopts)
