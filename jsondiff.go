@@ -144,10 +144,16 @@ func (ctx *context) terminateTag(buf *bytes.Buffer) {
 
 func (ctx *context) newline(buf *bytes.Buffer, s string) {
 	buf.WriteString(s)
+	if ctx.lastTag != nil {
+		buf.WriteString(ctx.lastTag.End)
+	}
 	buf.WriteString("\n")
 	buf.WriteString(ctx.opts.Prefix)
 	for i := 0; i < ctx.level; i++ {
 		buf.WriteString(ctx.opts.Indent)
+	}
+	if ctx.lastTag != nil {
+		buf.WriteString(ctx.lastTag.Begin)
 	}
 }
 

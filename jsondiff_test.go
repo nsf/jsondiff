@@ -116,11 +116,11 @@ var diffStringCases = []struct {
 	`, diffSkipMatches},
 	{`{"a":[1,2,3]}`, `{"b":"foo"}`, `
  {
-  (R:"a": [
-    1,
-    2,
-    3
-  ]:R),
+  (R:"a": [:R)
+    (R:1,:R)
+    (R:2,:R)
+    (R:3:R)
+  (R:]:R),
   (A:"b": "foo":A)
 }
 	`, 0},
