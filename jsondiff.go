@@ -193,8 +193,16 @@ func (ctx *context) writeValue(buf *bytes.Buffer, v interface{}, full bool) {
 				ctx.level++
 				ctx.newline(buf, "{")
 			}
+
+			keys := make([]string, 0, len(vv))
+			for key := range vv {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+
 			i := 0
-			for k, v := range vv {
+			for _, k := range keys {
+				v := vv[k]
 				ctx.key(buf, k)
 				ctx.writeValue(buf, v, true)
 				if i != len(vv)-1 {
