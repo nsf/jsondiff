@@ -3,6 +3,7 @@ package jsondiff
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"reflect"
 	"sort"
 	"strconv"
@@ -606,7 +607,7 @@ func (ctx *context) printDiff(a, b interface{}) string {
 	return ctx.finalize(&buf)
 }
 
-// Compares two JSON documents using given options. Returns difference type and
+// Compare compares two JSON documents using given options. Returns difference type and
 // a string describing differences.
 //
 // FullMatch means provided arguments are deeply equal.
@@ -616,11 +617,11 @@ func (ctx *context) printDiff(a, b interface{}) string {
 // hierarchy which don't match exactly, it must be a superset of another one.
 // For example:
 //
-//     {"a": 123, "b": 456, "c": [7, 8, 9]}
+//	{"a": 123, "b": 456, "c": [7, 8, 9]}
 //
 // Is a superset of:
 //
-//     {"a": 123, "c": [7, 8]}
+//	{"a": 123, "c": [7, 8]}
 //
 // NoMatch means there is no match.
 //
@@ -632,10 +633,16 @@ func (ctx *context) printDiff(a, b interface{}) string {
 // to understand that returned format is not a valid JSON and is not meant
 // to be machine readable.
 func Compare(a, b []byte, opts *Options) (Difference, string) {
+	return CompareStreams(bytes.NewReader(a), bytes.NewReader(b), opts)
+}
+
+// CompareStreams compares two JSON documents streamed by the specified readers.
+// See the documentation for `Compare` for a description of the input options and return values.
+func CompareStreams(a, b io.Reader, opts *Options) (Difference, string) {
 	var av, bv interface{}
-	da := json.NewDecoder(bytes.NewReader(a))
+	da := json.NewDecoder(a)
 	da.UseNumber()
-	db := json.NewDecoder(bytes.NewReader(b))
+	db := json.NewDecoder(b)
 	db.UseNumber()
 	errA := da.Decode(&av)
 	errB := db.Decode(&bv)

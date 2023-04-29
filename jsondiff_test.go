@@ -1,6 +1,7 @@
 package jsondiff
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -34,6 +35,17 @@ func TestCompare(t *testing.T) {
 	opts.PrintTypes = false
 	for i, c := range compareCases {
 		result, _ := Compare([]byte(c.a), []byte(c.b), &opts)
+		if result != c.result {
+			t.Errorf("case %d failed, got: %s, expected: %s", i, result, c.result)
+		}
+	}
+}
+
+func TestCompareStreams(t *testing.T) {
+	opts := DefaultConsoleOptions()
+	opts.PrintTypes = false
+	for i, c := range compareCases {
+		result, _ := CompareStreams(bytes.NewReader([]byte(c.a)), bytes.NewReader([]byte(c.b)), &opts)
 		if result != c.result {
 			t.Errorf("case %d failed, got: %s, expected: %s", i, result, c.result)
 		}
