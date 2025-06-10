@@ -238,3 +238,224 @@ func TestCompareFloatsWithEpsilon(t *testing.T) {
 		}
 	}
 }
+
+func TestPresenceFeature(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        string
+		b        string
+		expected Difference
+	}{
+		{
+			name:     "presence check with existing value",
+			a:        `{"name": "John", "age": 30}`,
+			b:        `{"name": "<<PRESENCE>>", "age": "<<PRESENCE>>"}`,
+			expected: FullMatch,
+		},
+		{
+			name:     "presence check with missing value",
+			a:        `{"name": "John"}`,
+			b:        `{"name": "<<PRESENCE>>", "age": "<<PRESENCE>>"}`,
+			expected: NoMatch,
+		},
+		{
+			name:     "presence check in array",
+			a:        `["value1", "value2", "value3"]`,
+			b:        `["<<PRESENCE>>", "<<PRESENCE>>", "<<PRESENCE>>"]`,
+			expected: FullMatch,
+		},
+		{
+			name:     "presence check in shorter array",
+			a:        `["value1", "value2"]`,
+			b:        `["<<PRESENCE>>", "<<PRESENCE>>", "<<PRESENCE>>"]`,
+			expected: NoMatch,
+		},
+		{
+			name:     "mixed presence and exact match",
+			a:        `{"name": "John", "age": 30, "city": "NYC"}`,
+			b:        `{"name": "<<PRESENCE>>", "age": 30, "city": "<<PRESENCE>>"}`,
+			expected: FullMatch,
+		},
+		{
+			name:     "mixed presence with mismatch",
+			a:        `{"name": "John", "age": 25, "city": "NYC"}`,
+			b:        `{"name": "<<PRESENCE>>", "age": 30, "city": "<<PRESENCE>>"}`,
+			expected: NoMatch,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diff, _ := Compare([]byte(tt.a), []byte(tt.b), nil)
+			if diff != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, diff)
+			}
+		})
+	}
+}
+
+func TestPresencePartialMatches(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        string
+		b        string
+		expected Difference
+	}{
+		{
+			name:     "superset match - extra properties in a",
+			a:        `{"name": "John", "age": 30, "city": "NYC", "country": "USA"}`,
+			b:        `{"name": "<<PRESENCE>>", "age": "<<PRESENCE>>"}`,
+			expected: SupersetMatch,
+		},
+		{
+			name:     "partial presence with missing required field",
+			a:        `{"name": "John", "city": "NYC"}`,
+			b:        `{"name": "<<PRESENCE>>", "age": "<<PRESENCE>>", "city": "<<PRESENCE>>"}`,
+			expected: NoMatch,
+		},
+		{
+			name:     "nested object with presence check",
+			a:        `{"user": {"name": "John", "email": "john@example.com"}, "status": "active"}`,
+			b:        `{"user": "<<PRESENCE>>", "status": "<<PRESENCE>>"}`,
+			expected: FullMatch,
+		},
+		{
+			name:     "nested object with missing nested field",
+			a:        `{"user": {"name": "John"}, "status": "active"}`,
+			b:        `{"user": {"name": "<<PRESENCE>>", "email": "<<PRESENCE>>"}, "status": "<<PRESENCE>>"}`,
+			expected: NoMatch,
+		},
+		{
+			name:     "array with partial presence",
+			a:        `["value1", "value2"]`,
+			b:        `["<<PRESENCE>>", "<<PRESENCE>>", "<<PRESENCE>>"]`,
+			expected: NoMatch,
+		},
+		{
+			name:     "array superset with presence",
+			a:        `["value1", "value2", "value3", "value4"]`,
+			b:        `["<<PRESENCE>>", "<<PRESENCE>>"]`,
+			expected: SupersetMatch,
+		},
+		{
+			name:     "mixed exact and presence with partial match",
+			a:        `{"name": "John", "age": 25, "city": "NYC"}`,
+			b:        `{"name": "<<PRESENCE>>", "age": 30, "city": "<<PRESENCE>>", "country": "<<PRESENCE>>"}`,
+			expected: NoMatch,
+		},
+		{
+			name:     "complex nested structure with presence",
+			a:        `{"users": [{"name": "John"}, {"name": "Jane"}], "count": 2}`,
+			b:        `{"users": "<<PRESENCE>>", "count": "<<PRESENCE>>"}`,
+			expected: FullMatch,
+		},
+		{
+			name:     "empty object vs presence requirements",
+			a:        `{}`,
+			b:        `{"required": "<<PRESENCE>>"}`,
+			expected: NoMatch,
+		},
+		{
+			name:     "empty array vs presence requirements",
+			a:        `[]`,
+			b:        `["<<PRESENCE>>"]`,
+			expected: NoMatch,
+		},
+		{
+			name:     "null value vs presence requirement",
+			a:        `{"field": null}`,
+			b:        `{"field": "<<PRESENCE>>"}`,
+			expected: FullMatch, // null is considered present
+		},
+		{
+			name:     "boolean false vs presence requirement",
+			a:        `{"active": false}`,
+			b:        `{"active": "<<PRESENCE>>"}`,
+			expected: FullMatch, // false is considered present
+		},
+		{
+			name:     "zero number vs presence requirement",
+			a:        `{"count": 0}`,
+			b:        `{"count": "<<PRESENCE>>"}`,
+			expected: FullMatch, // 0 is considered present
+		},
+		{
+			name:     "empty string vs presence requirement",
+			a:        `{"name": ""}`,
+			b:        `{"name": "<<PRESENCE>>"}`,
+			expected: FullMatch, // empty string is considered present
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diff, output := Compare([]byte(tt.a), []byte(tt.b), nil)
+			if diff != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, diff)
+				t.Errorf("Output: %s", output)
+			}
+		})
+	}
+}
+
+func TestPresenceEdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        string
+		b        string
+		expected Difference
+	}{
+		{
+			name:     "presence check with literal <<PRESENCE>> string",
+			a:        `{"message": "<<PRESENCE>>"}`,
+			b:        `{"message": "<<PRESENCE>>"}`,
+			expected: FullMatch, // both have literal string, should match exactly
+		},
+		{
+			name:     "presence check vs literal string mismatch",
+			a:        `{"message": "hello"}`,
+			b:        `{"message": "<<PRESENCE>>"}`,
+			expected: FullMatch, // presence check should pass
+		},
+		{
+			name:     "literal string vs presence check (reversed)",
+			a:        `{"message": "<<PRESENCE>>"}`,
+			b:        `{"message": "hello"}`,
+			expected: NoMatch, // exact match required, different strings
+		},
+		{
+			name:     "deeply nested presence check",
+			a:        `{"level1": {"level2": {"level3": {"value": "exists"}}}}`,
+			b:        `{"level1": {"level2": {"level3": {"value": "<<PRESENCE>>"}}}}`,
+			expected: FullMatch,
+		},
+		{
+			name:     "presence check in mixed array types",
+			a:        `[1, "string", true, {"key": "value"}, [1,2,3]]`,
+			b:        `["<<PRESENCE>>", "<<PRESENCE>>", "<<PRESENCE>>", "<<PRESENCE>>", "<<PRESENCE>>"]`,
+			expected: FullMatch,
+		},
+		{
+			name:     "presence check with complex object",
+			a:        `{"data": {"users": [{"id": 1}, {"id": 2}], "total": 2}}`,
+			b:        `{"data": "<<PRESENCE>>"}`,
+			expected: FullMatch,
+		},
+		{
+			name:     "multiple presence checks with one missing",
+			a:        `{"a": 1, "b": 2}`,
+			b:        `{"a": "<<PRESENCE>>", "b": "<<PRESENCE>>", "c": "<<PRESENCE>>"}`,
+			expected: NoMatch,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diff, output := Compare([]byte(tt.a), []byte(tt.b), nil)
+			if diff != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, diff)
+				t.Errorf("Output: %s", output)
+			}
+		})
+	}
+}
