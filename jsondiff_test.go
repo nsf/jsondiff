@@ -365,7 +365,7 @@ func TestPresencePartialMatches(t *testing.T) {
 			name:     "null value vs presence requirement",
 			a:        `{"field": null}`,
 			b:        `{"field": "<<PRESENCE>>"}`,
-			expected: FullMatch, // null is considered present
+			expected: NoMatch, // null is not considered present
 		},
 		{
 			name:     "boolean false vs presence requirement",

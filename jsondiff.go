@@ -527,14 +527,23 @@ func (ctx *context) printDiff(a, b interface{}) string {
 
 	// Check for special <<PRESENCE>> value in b
 	if bStr, ok := b.(string); ok && bStr == "<<PRESENCE>>" {
-		// If printDiff is called, it means the value was present in both sides
+		// If printDiff is called, it means the key was present in both sides
 		// (the dual iterator only calls printDiff when aOK && bOK are true)
-		// So regardless of whether a is nil or not, the presence check passes
-		if !ctx.opts.SkipMatches {
-			ctx.tag(&buf, &ctx.opts.Normal)
-			ctx.writeValue(&buf, a, true)
-			buf.WriteString(" (presence confirmed)")
-			ctx.result(FullMatch)
+		// However, null values should be treated as missing for presence checks
+		if a == nil {
+			// Value is null, treat as missing - this is NoMatch
+			ctx.tag(&buf, &ctx.opts.Removed)
+			ctx.writeValue(&buf, nil, false)
+			buf.WriteString(" (expected presence, but value is null)")
+			ctx.result(NoMatch)
+		} else {
+			// Value is present and not null - this is a match
+			if !ctx.opts.SkipMatches {
+				ctx.tag(&buf, &ctx.opts.Normal)
+				ctx.writeValue(&buf, a, true)
+				buf.WriteString(" (presence confirmed)")
+				ctx.result(FullMatch)
+			}
 		}
 		return ctx.finalize(&buf)
 	}
@@ -645,11 +654,12 @@ func (ctx *context) printDiff(a, b interface{}) string {
 // Special Feature: Presence Check
 // If the second argument (b) contains the special string "<<PRESENCE>>" as a value,
 // it will check if a corresponding value exists in the first argument (a). If the
-// value is present (regardless of its actual value), it's considered a match.
-// If the value is missing, it's considered NoMatch. For example:
+// value is present and not null, it's considered a match. If the value is missing
+// or null, it's considered NoMatch. For example:
 //
 //	Compare(`{"name": "John"}`, `{"name": "<<PRESENCE>>"}`, nil) // FullMatch
 //	Compare(`{}`, `{"name": "<<PRESENCE>>"}`, nil) // NoMatch
+//	Compare(`{"name": null}`, `{"name": "<<PRESENCE>>"}`, nil) // NoMatch
 //
 // Returned string uses a format similar to pretty printed JSON to show the
 // human-readable difference between provided JSON documents. It is important
