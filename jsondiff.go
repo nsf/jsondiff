@@ -525,6 +525,29 @@ func (ctx *context) printCollectionDiff(cfg *collectionConfig, it dualIterator) 
 func (ctx *context) printDiff(a, b interface{}) string {
 	var buf bytes.Buffer
 
+	// Check for special <<PRESENCE>> value in b
+	if bStr, ok := b.(string); ok && bStr == "<<PRESENCE>>" {
+		// If printDiff is called, it means the key was present in both sides
+		// (the dual iterator only calls printDiff when aOK && bOK are true)
+		// However, null values should be treated as missing for presence checks
+		if a == nil {
+			// Value is null, treat as missing - this is NoMatch
+			ctx.tag(&buf, &ctx.opts.Removed)
+			ctx.writeValue(&buf, nil, false)
+			buf.WriteString(" (expected presence, but value is null)")
+			ctx.result(NoMatch)
+		} else {
+			// Value is present and not null - this is a match
+			if !ctx.opts.SkipMatches {
+				ctx.tag(&buf, &ctx.opts.Normal)
+				ctx.writeValue(&buf, a, true)
+				buf.WriteString(" (presence confirmed)")
+				ctx.result(FullMatch)
+			}
+		}
+		return ctx.finalize(&buf)
+	}
+
 	if a == nil || b == nil {
 		// either is nil, means there are just two cases:
 		// 1. both are nil => match
@@ -628,6 +651,16 @@ func (ctx *context) printDiff(a, b interface{}) string {
 // The rest of the difference types mean that one of or both JSON documents are
 // invalid JSON.
 //
+// Special Feature: Presence Check
+// If the second argument (b) contains the special string "<<PRESENCE>>" as a value,
+// it will check if a corresponding value exists in the first argument (a). If the
+// value is present and not null, it's considered a match. If the value is missing
+// or null, it's considered NoMatch. For example:
+//
+//	Compare(`{"name": "John"}`, `{"name": "<<PRESENCE>>"}`, nil) // FullMatch
+//	Compare(`{}`, `{"name": "<<PRESENCE>>"}`, nil) // NoMatch
+//	Compare(`{"name": null}`, `{"name": "<<PRESENCE>>"}`, nil) // NoMatch
+//
 // Returned string uses a format similar to pretty printed JSON to show the
 // human-readable difference between provided JSON documents. It is important
 // to understand that returned format is not a valid JSON and is not meant
@@ -657,6 +690,12 @@ func CompareStreams(a, b io.Reader, opts *Options) (Difference, string) {
 	}
 
 	var buf bytes.Buffer
+
+	// Use default options if none provided
+	if opts == nil {
+		defaultOpts := Options{}
+		opts = &defaultOpts
+	}
 
 	ctx := context{opts: opts}
 	buf.WriteString(ctx.printDiff(av, bv))
